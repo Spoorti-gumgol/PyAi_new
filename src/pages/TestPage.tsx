@@ -66,6 +66,65 @@ export default function TestPage() {
   const [streakCount,     setStreakCount]      = useState(0);
   const [userCode, setUserCode] = useState("");
 
+  const [showChat, setShowChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState<any[]>([]);
+  const [userMessage, setUserMessage] = useState("");
+
+  const sendMessage = async () => {
+    if (!userMessage.trim()) return;
+
+    const newUserMsg = {
+      role: "user",
+      content: userMessage
+    };
+
+    const updatedHistory = [...chatMessages, newUserMsg];
+    setChatMessages(updatedHistory);
+    setUserMessage("");
+
+    // typing state
+    setChatMessages(prev => [
+      ...prev,
+      { role: "bot", content: "Typing..." }
+    ]);
+
+    try {
+      const res = await fetch("http://127.0.0.1:8000/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: userMessage,
+
+          // 🔥 IMPORTANT CONTEXT
+          question: currentQuestion.question_text,
+          selected_option: selectedOption?.option_text,
+          correct_answer: currentQuestion.mcq_options.find(o => o.is_correct)?.option_text,
+
+          history: updatedHistory.map(msg => ({
+            role: msg.role === "bot" ? "assistant" : msg.role,
+            content: msg.content
+          })),
+          username: "student"
+        })
+      });
+
+      const data = await res.json();
+
+      setChatMessages(prev => [
+        ...prev.slice(0, -1),
+        { role: "bot", content: data.reply }
+      ]);
+
+    } catch (error) {
+      setChatMessages(prev => [
+        ...prev.slice(0, -1),
+        { role: "bot", content: "Error connecting to AI" }
+      ]);
+    }
+  };
+
   useEffect(() => {
     if (!testId) return;
     const fetchQuestions = async () => {
@@ -102,7 +161,9 @@ export default function TestPage() {
 
   const handleSelect = (opt: Option) => {
     if (selectedOption) return;
+
     setSelectedOption(opt);
+
     if (opt.is_correct) {
       setScore(s => s + 1);
       setStreakCount(s => s + 1);
@@ -110,6 +171,9 @@ export default function TestPage() {
     } else {
       setStreakCount(0);
       setMascotMessage(randomFrom(WRONG_MESSAGES));
+
+      // 🔥 AUTO OPEN CHAT WHEN WRONG
+      setShowChat(true);
     }
   };
 
@@ -120,6 +184,10 @@ export default function TestPage() {
       setCurrentIndex(i => i + 1);
       setSelectedOption(null);
       setMascotMessage(null);
+
+      // 🔥 RESET CHAT FOR NEXT QUESTION
+      setShowChat(false);
+      setChatMessages([]);
     }
   };
 
@@ -350,16 +418,69 @@ export default function TestPage() {
               </p>
             )}
 
-            <button
-              onClick={handleNext}
-              className={`w-full py-4 text-white font-black text-lg rounded-2xl transition-all active:translate-y-1 active:shadow-none ${
-                selectedOption.is_correct
-                  ? "bg-[#58CC02] shadow-[0_4px_0_0_#46A302]"
-                  : "bg-[#FF4B4B] shadow-[0_4px_0_0_#cc0000]"
-              }`}
-            >
-              {currentIndex + 1 >= questions.length ? "SEE RESULTS 🏆" : "CONTINUE →"}
-            </button>
+            <div className="flex gap-3">
+
+              {/* ASK BUTTON */}
+              <button
+                onClick={() => setShowChat(!showChat)}
+                className="flex-1 py-4 bg-[#1CB0F6] text-white font-black text-lg rounded-2xl shadow-[0_4px_0_0_#1899D6] active:translate-y-1 active:shadow-none transition-all"
+              >
+                {selectedOption?.is_correct ? "ASK MORE 💬" : "ASK WHY ❓"}
+              </button>
+
+              {/* CONTINUE BUTTON */}
+              <button
+                onClick={handleNext}
+                className={`flex-1 py-4 text-white font-black text-lg rounded-2xl transition-all active:translate-y-1 active:shadow-none ${
+                  selectedOption.is_correct
+                    ? "bg-[#58CC02] shadow-[0_4px_0_0_#46A302]"
+                    : "bg-[#FF4B4B] shadow-[0_4px_0_0_#cc0000]"
+                }`}
+              >
+                {currentIndex + 1 >= questions.length ? "SEE RESULTS 🏆" : "CONTINUE →"}
+              </button>
+
+            </div>
+            {/* CHAT BOX */}
+            {showChat && (
+              <div className="mt-4 bg-white border-2 border-gray-200 rounded-2xl p-4 space-y-3 max-h-80 overflow-y-auto">
+
+                {/* Messages */}
+                <div className="flex flex-col gap-2">
+                  {chatMessages.map((msg, i) => (
+                    <div
+                      key={i}
+                      className={`p-3 rounded-xl text-sm font-medium ${
+                        msg.role === "user"
+                          ? "bg-[#1CB0F6] text-white self-end"
+                          : "bg-gray-100 text-gray-700 self-start"
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Input */}
+                <div className="flex gap-2">
+                  <input
+                    value={userMessage}
+                    onChange={(e) => setUserMessage(e.target.value)}
+                    placeholder="Ask your doubt..."
+                    className="flex-1 border-2 border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none"
+                  />
+
+                  <button
+                    onClick={sendMessage}
+                    className="bg-[#58CC02] text-white px-4 rounded-xl font-bold"
+                  >
+                    Send
+                  </button>
+                </div>
+
+              </div>
+            )}
+
           </div>
         )}
 
