@@ -71,6 +71,8 @@ export default function TestPage() {
   const [userMessage, setUserMessage] = useState("");
 
   const sendMessage = async () => {
+    const { data: { user } } = await supabase.auth.getUser()
+    const userId = user?.id;    
     if (!userMessage.trim()) return;
 
     const newUserMsg = {
@@ -106,7 +108,8 @@ export default function TestPage() {
             role: msg.role === "bot" ? "assistant" : msg.role,
             content: msg.content
           })),
-          username: "student"
+          username: "student",
+          user_id: userId
         })
       });
 

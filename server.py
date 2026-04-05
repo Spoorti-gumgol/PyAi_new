@@ -12,18 +12,24 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
+from supabase import create_client
 
 
 load_dotenv(override=True)
 
 api_key = os.getenv("GOOGLE_API_KEY")
 
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 class ChatRequest(BaseModel):
     message: str
     history: list = []
     lesson_title: str | None = None
     lesson_content: str | None = None
-    username: str | None = None
+    user_id: str
 
 from contextlib import asynccontextmanager
 
@@ -72,6 +78,18 @@ async def lifespan(app: FastAPI):
     prompt = ChatPromptTemplate.from_template("""
     You are a friendly coding tutor for kids.
 
+    Student Info:
+    Name: {student_name}
+    Current Topic: {topic_name}
+    Current Question: {question_text}
+    Test: {test_name}
+
+    Adapt your teaching based on this:
+    - Refer to the student by name when appropriate
+    - Focus more on the current topic
+    - If a question is given, explain it clearly
+    - If test is present, help improve mistakes
+
     Use the provided context as your primary reference.
     But you are also allowed to use your own knowledge to:
     - explain concepts clearly
@@ -84,8 +102,6 @@ async def lifespan(app: FastAPI):
 
     If the context is insufficient:
     - use your own knowledge, but clearly explain
-                                            
-    If possible, give examples and real-world applications.
 
     Format your answer STRICTLY like this:
 
@@ -104,9 +120,6 @@ async def lifespan(app: FastAPI):
     - Short sentences
     - Line breaks
     - No long paragraphs
-    - No symbols like --- or ###
-
-    Use previous conversation if helpful.
 
     Chat History:
     {history}
@@ -118,7 +131,7 @@ async def lifespan(app: FastAPI):
     {question}
 
     Answer like a teacher:
-    """)
+    """)   
 
     retriever = vector_db.as_retriever(search_kwargs={"k": 3})
 
@@ -146,18 +159,33 @@ async def lifespan(app: FastAPI):
         docs = retriever.invoke(x["question"])
         rag_context = format_docs(docs)
 
-        # 🔥 lesson context from frontend
+        # 🔥 lesson context
         lesson_context = ""
         if x.get("lesson_content"):
             lesson_context = f"Lesson Content:\n{x['lesson_content']}\n\n"
 
-        return lesson_context + rag_context
+        # 🔥 ADD THIS (personalization)
+        profile_context = f"""
+    Student Name: {x.get("student_name")}
+    Topic: {x.get("topic_name")}
+    Current Question: {x.get("question_text")}
+    Test: {x.get("test_name")}
+    """
+
+        return profile_context + "\n\n" + lesson_context + rag_context
+    
 
     rag_chain = (
         {
             "context": RunnablePassthrough() | combine_context,
             "question": RunnablePassthrough() | get_question,
-            "history": RunnablePassthrough() | get_history
+            "history": RunnablePassthrough() | get_history,
+
+            # 🔥 ADD THESE
+            "student_name": RunnablePassthrough(),
+            "question_text": RunnablePassthrough(),
+            "topic_name": RunnablePassthrough(),
+            "test_name": RunnablePassthrough(),
         }
         | prompt
         | llm
@@ -176,16 +204,44 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def enrich_context_with_profile(user_id):
+    res = supabase.table("user_attempts")\
+        .select("""
+            *,
+            users(*),
+            questions(*),
+            topics(*),
+            tests(*)
+        """)\
+        .eq("user_id", user_id)\
+        .execute()
+    if res.data:
+        data = res.data[0]
+        student_name = data["users"]["name"]
+        question_text = data["questions"]["question_text"]
+        topic_name = data["topics"]["name"]
+        test_name = data["tests"]["title"]
+    if res.data:
+        return student_name, question_text, topic_name, test_name
+    else:
+        return "", "", "", ""
+
 @app.options("/chat")
 async def options_chat():
     return {}
 
 @app.post("/chat")
 async def chat_api(req: ChatRequest):
+    
+    student_name,question_text,topic_name,test_name = enrich_context_with_profile(req.user_id)
     response = rag_chain.invoke({
         "question": req.message,
         "history": req.history,
         "lesson_content": req.lesson_content,
-        "lesson_title": req.lesson_title
+        "lesson_title": req.lesson_title,
+        "student_name":student_name,
+        "question_text":question_text,
+        "topic_name":topic_name,
+        "test_name":test_name,
     })
     return {"reply": response}

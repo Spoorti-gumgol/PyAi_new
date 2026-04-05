@@ -39,7 +39,7 @@ export const Signup = () => {
       }
 
       // 🧠 Step 2: Insert into your users table
-      const { error: dbError } = await supabase.from("users").insert([
+      const { error: dbError } = await supabase.from("users").upsert([
         {
           id: authUser.id,
           name,
