@@ -23,6 +23,7 @@ import UnitsPage from "./pages/UnitsPage";
 import TestPage from "./pages/TestPage";
 
 import { supabase } from "./supabase";
+import AdaptiveTestPage from "./pages/AdaptiveTestPAge";
 
 function AppContent() {
   const location = useLocation();
@@ -83,6 +84,10 @@ function AppContent() {
             <ProtectedRoute><Profile /></ProtectedRoute>
           }/>
 
+          <Route path="/adaptive-test/:unitId" element={
+            <ProtectedRoute><AdaptiveTestPage /></ProtectedRoute>
+          }/>
+  
         </Routes>
       </main>
     </div>

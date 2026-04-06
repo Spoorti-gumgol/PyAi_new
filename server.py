@@ -13,6 +13,8 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
 from supabase import create_client
+import json
+import re
 
 
 load_dotenv(override=True)
@@ -25,11 +27,16 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str           # user doubt
+    question: str
     history: list = []
     lesson_title: str | None = None
     lesson_content: str | None = None
     user_id: str
+
+class AnalysisRequest(BaseModel):
+    user_id: str
+    progress: dict
 
 from contextlib import asynccontextmanager
 
@@ -72,7 +79,7 @@ async def lifespan(app: FastAPI):
 
     llm = ChatGoogleGenerativeAI(
         model="gemini-3-flash-preview",
-        temperature=0
+        temperature=0.3
     )
 
     prompt = ChatPromptTemplate.from_template("""
@@ -133,7 +140,7 @@ async def lifespan(app: FastAPI):
     Answer like a teacher:
     """)   
 
-    retriever = vector_db.as_retriever(search_kwargs={"k": 3})
+    retriever = vector_db.as_retriever(search_kwargs={"k": 5})
 
     def format_history(history):
         history = history[-5:]  # limit memory (important)
@@ -149,7 +156,7 @@ async def lifespan(app: FastAPI):
         return "\n\n".join(doc.page_content for doc in docs)
 
     def get_question(x):
-        return x["question"]
+        return x["question"]   # ✅ use real question for RAG
     
     def get_history(x):
         return format_history(x["history"])
@@ -186,6 +193,7 @@ async def lifespan(app: FastAPI):
             "question_text": RunnablePassthrough(),
             "topic_name": RunnablePassthrough(),
             "test_name": RunnablePassthrough(),
+            "message": RunnablePassthrough(),
         }
         | prompt
         | llm
@@ -235,7 +243,8 @@ async def chat_api(req: ChatRequest):
     
     student_name,question_text,topic_name,test_name = enrich_context_with_profile(req.user_id)
     response = rag_chain.invoke({
-        "question": req.message,
+        "question": req.question,   # 🔥 REAL QUESTION
+        "message": req.message,
         "history": req.history,
         "lesson_content": req.lesson_content,
         "lesson_title": req.lesson_title,
@@ -244,4 +253,77 @@ async def chat_api(req: ChatRequest):
         "topic_name":topic_name,
         "test_name":test_name,
     })
+    print(response)
     return {"reply": response}
+
+@app.post("/analyze")
+async def analyze_user(req: AnalysisRequest):
+    try:
+        # 🔥 Get profile info (reuse your function)
+        student_name, question_text, topic_name, test_name = enrich_context_with_profile(req.user_id)
+
+        # 🔥 Build prompt for analysis
+        analysis_prompt = f"""
+You are an AI learning coach.
+
+Analyze the student's learning progress.
+
+Student Name: {student_name}
+Topic: {topic_name}
+Recent Question: {question_text}
+Test: {test_name}
+
+Return ONLY valid JSON.
+Do NOT return a list.
+Do NOT use markdown.
+Do NOT add explanation.
+
+Output format:
+{{
+  "summary": "...",
+  "strengths": ["...", "..."],
+  "weaknesses": ["...", "..."],
+  "nextSteps": ["...", "..."]
+}}
+
+Progress Data:
+{req.progress}
+
+"""
+
+        # 🔥 Call LLM directly (reuse your Gemini model)
+        llm = ChatGoogleGenerativeAI(
+            model="gemini-3-flash-preview",
+            temperature=0
+        )
+
+        response = llm.invoke(analysis_prompt)
+
+        raw = response.content
+
+        # ✅ Case 1: Gemini returns list
+        if isinstance(raw, list):
+            raw = raw[0]  # take first item
+
+        # ✅ Case 2: extract text field
+        if isinstance(raw, dict) and "text" in raw:
+            raw = raw["text"]
+
+        # ✅ Case 3: now raw is string → extract JSON
+        if isinstance(raw, str):
+            match = re.search(r"\{.*\}", raw, re.DOTALL)
+            if match:
+                return json.loads(match.group())
+
+        # ❌ fallback
+        raise ValueError("Invalid LLM response format")
+
+    except Exception as e:
+        print("Analysis error:", e)
+        return {
+            "summary": "Could not analyze progress.",
+            "strengths": [],
+            "weaknesses": [],
+            "nextSteps": []
+        }
+    

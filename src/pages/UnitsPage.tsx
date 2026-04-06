@@ -137,6 +137,8 @@ export default function UnitsPage() {
         </div>
       </div>
 
+      {/* console.log("Selected Unit:", selectedUnit); */}
+
       {/* ── ADVENTURE PATH (shown when a unit is selected) ── */}
       {selectedUnit && (
         <div style={{ animation: "slideDown 0.3s ease both" }}>
@@ -152,7 +154,8 @@ export default function UnitsPage() {
               <p className="font-black text-gray-400 text-lg">No topics yet for this unit.</p>
             </div>
           ) : (
-            <AdventurePath topics={topics} />
+            <AdventurePath topics={topics} unitId={selectedUnit.id || ""} />
+            
           )}
         </div>
       )}

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { 
@@ -13,6 +13,8 @@ import {
 } from 'lucide-react';
 import { COURSES } from '../data/courseData';
 import { useProgress } from '../context/ProgressContext';
+import { supabase } from "../supabase";
+
 
 export const Dashboard = () => {
   const { userProgress } = useProgress();
@@ -22,7 +24,11 @@ export const Dashboard = () => {
 
   // Calculate Stats
   const xp = Math.round(userProgress.totalXP);
+  const [analysis, setAnalysis] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   
+  const [userId, setUserId] = useState<string | null>(null);
+
   // Calculate total completed skills
   let completedSkillsCount = 0;
   let recentActivity: string[] = [];
@@ -38,6 +44,43 @@ export const Dashboard = () => {
       }
     });
   });
+
+  useEffect(() => {
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserId(data.user?.id || null);
+    };
+
+    getUser();
+  }, []);
+
+  useEffect(() => {
+    if (!userId) return;
+
+    const fetchAnalysis = async () => {
+      try {
+        const res = await fetch("http://localhost:8000/analyze", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            progress: userProgress
+          })
+        });
+
+        const data = await res.json();
+        setAnalysis(data);
+      } catch (err) {
+        console.error("Analysis fetch error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAnalysis();
+  }, [userId, userProgress]);
 
   return (
     <div className="min-h-screen bg-[#F7F7F7] py-12 px-6">
@@ -62,61 +105,57 @@ export const Dashboard = () => {
           <div className="lg:col-span-2 space-y-10">
             <section className="space-y-6">
               <h2 className="text-2xl font-black text-[#4B4B4B] flex items-center gap-2">
-                <LayoutDashboard className="text-[#1CB0F6]" /> Active Quest
+                🧠 AI Learning Analysis
               </h2>
-              {/* Show all courses as active for now since no enrollment logic */}
-              <div className="space-y-4">
-                {COURSES.map(course => {
-                  // Calculate progress
-                  const totalSkills = course.units.reduce((acc, u) => acc + u.skills.length, 0);
-                  let completedInCourse = 0;
-                  
-                  // Check progress
-                  course.units.forEach(u => {
-                    u.skills.forEach(s => {
-                      if (userProgress.progress[u.id]?.[s.id]?.completed) {
-                        completedInCourse++;
-                      }
-                    });
-                  });
-                  
-                  const progressPercent = totalSkills > 0 ? Math.round((completedInCourse / totalSkills) * 100) : 0;
 
-                  return (
-                    <div key={course.id} className="bg-white rounded-[32px] border-2 border-[#E5E5E5] p-8 shadow-sm group hover:border-[#1CB0F6] transition-colors">
-                      <div className="flex flex-col md:flex-row justify-between gap-6">
-                        <div className="space-y-4 flex-1">
-                          <div className="flex gap-2">
-                            <span className="px-3 py-1 bg-blue-50 text-[#1CB0F6] font-black text-[10px] rounded-full uppercase">ENROLLED</span>
-                            <span className="px-3 py-1 bg-gray-50 text-gray-400 font-black text-[10px] rounded-full uppercase">{course.level}</span>
-                          </div>
-                          <h3 className="text-2xl font-black text-[#4B4B4B]">{course.title}</h3>
-                          <div className="space-y-2">
-                              <div className="flex justify-between items-center text-xs font-bold text-gray-400 uppercase">
-                                <span>Overall Progress</span>
-                                <span>{progressPercent}%</span>
-                              </div>
-                              <div className="h-4 bg-gray-100 rounded-full overflow-hidden">
-                                <motion.div 
-                                className="h-full bg-[#58CC02]"
-                                initial={{ width: 0 }}
-                                animate={{ width: `${progressPercent}%` }}
-                                />
-                              </div>
-                          </div>
-                        </div>
-                        <div className="flex flex-col justify-center">
-                          <Link 
-                            to={`/course/${course.id}`}
-                            className="bg-[#1CB0F6] text-white px-8 py-4 rounded-2xl font-black text-lg shadow-[0_6px_0_0_#1899D6] active:translate-y-1 active:shadow-none transition-all flex items-center justify-center gap-2"
-                          >
-                            CONTINUE <ChevronRight />
-                          </Link>
-                        </div>
-                      </div>
+              <div className="bg-white rounded-[32px] border-2 border-[#E5E5E5] p-8 shadow-sm">
+                
+                {loading ? (
+                  <p className="text-gray-400">Analyzing your progress...</p>
+                ) : analysis ? (
+                  <div className="space-y-6">
+                    
+                    {/* Summary */}
+                    <div>
+                      <h3 className="font-bold text-lg text-[#4B4B4B]">Summary</h3>
+                      <p className="text-gray-600">{analysis.summary}</p>
                     </div>
-                  );
-                })}
+
+                    {/* Strengths */}
+                    <div>
+                      <h3 className="font-bold text-lg text-green-600">Strengths</h3>
+                      <ul className="list-disc ml-6 text-gray-600">
+                        {analysis.strengths.map((s: string, i: number) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Weaknesses */}
+                    <div>
+                      <h3 className="font-bold text-lg text-red-500">Weaknesses</h3>
+                      <ul className="list-disc ml-6 text-gray-600">
+                        {analysis.weaknesses.map((w: string, i: number) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    {/* Next Steps */}
+                    <div>
+                      <h3 className="font-bold text-lg text-blue-500">Recommended Next Steps</h3>
+                      <ul className="list-disc ml-6 text-gray-600">
+                        {analysis.nextSteps.map((n: string, i: number) => (
+                          <li key={i}>{n}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                  </div>
+                ) : (
+                  <p className="text-red-400">Failed to load analysis.</p>
+                )}
+
               </div>
             </section>
           </div>

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
 import { X, CheckCircle, XCircle, Star, Zap } from "lucide-react";
 
+
 type Option = {
   id: string;
   option_text: string;
@@ -69,6 +70,7 @@ export default function TestPage() {
   const [showChat, setShowChat] = useState(false);
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [userMessage, setUserMessage] = useState("");
+  const [nextUnitId, setNextUnitId] = useState<string | null>(null);
 
   const sendMessage = async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -159,8 +161,29 @@ export default function TestPage() {
     fetchQuestions();
   }, [testId]);
 
+
+  useEffect(() => {
+    if (!testId) return;
+
+    const fetchNextUnit = async () => {
+      const { data, error } = await supabase
+        .from("lessons")
+        .select("test_id")
+        .limit(2); // get multiple units
+
+      if (!error && data && data.length > 1) {
+        setNextUnitId(data[1].test_id); // just pick next
+      } else {
+        console.error("Next unit not found");
+      }
+    };
+
+      fetchNextUnit();
+    }, [testId]);
+
   const currentQuestion = questions[currentIndex];
   const progress        = questions.length > 0 ? (currentIndex / questions.length) * 100 : 0;
+
 
   const handleSelect = (opt: Option) => {
     if (selectedOption) return;
@@ -248,6 +271,7 @@ export default function TestPage() {
     const percent   = Math.round((score / questions.length) * 100);
     const isPerfect = percent === 100;
     const isGood    = percent >= 70;
+    const canProceed = percent >= 40;
 
     return (
       <div className="min-h-screen bg-[#F7F7F7] flex items-center justify-center px-6">
@@ -299,14 +323,32 @@ export default function TestPage() {
           </div>
 
           <div className="flex gap-3 w-full pt-2">
-            <button onClick={() => navigate(-1)}
-              className="flex-1 py-4 bg-gray-100 text-gray-600 font-black rounded-2xl hover:bg-gray-200 transition text-base">
+
+            {/* EXIT BUTTON */}
+            <button
+              onClick={() => navigate(-1)}
+              className="flex-1 py-4 bg-gray-100 text-gray-600 font-black rounded-2xl hover:bg-gray-200 transition text-base"
+            >
               Exit
             </button>
-            <button onClick={handleRestart}
-              className="flex-1 py-4 bg-[#58CC02] text-white font-black rounded-2xl shadow-[0_4px_0_0_#46A302] active:translate-y-1 active:shadow-none transition-all text-base">
-              Try Again 🔄
-            </button>
+
+            {/* CONDITIONAL BUTTON */}
+            {canProceed ? (
+              <button
+                onClick={() => navigate(-1)} // 🔥 adjust route if needed
+                className="flex-1 py-4 bg-[#1CB0F6] text-white font-black rounded-2xl shadow-[0_4px_0_0_#1899D6] active:translate-y-1 active:shadow-none transition-all text-base"
+              >
+                Next Unit 🚀
+              </button>
+            ) : (
+              <button
+                onClick={handleRestart}
+                className="flex-1 py-4 bg-[#FF4B4B] text-white font-black rounded-2xl shadow-[0_4px_0_0_#cc0000] active:translate-y-1 active:shadow-none transition-all text-base"
+              >
+                Try Again 🔄
+              </button>
+            )}
+
           </div>
 
         </div>

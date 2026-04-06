@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { supabase } from "../supabase";
 import { X, AlertCircle, BookOpen, ArrowRight } from "lucide-react";
+import { useProgress } from "../context/ProgressContext";
 
 type Lesson = {
   id: string;
@@ -16,6 +17,9 @@ export const LessonPage = () => {
   const { lessonId } = useParams<{ lessonId: string }>();
   const navigate     = useNavigate();
 
+  // ── Progress context ─────────────────────────────────
+  const { markLessonVisited } = useProgress();
+
   const [lesson,    setLesson]    = useState<Lesson | null>(null);
   const [pageState, setPageState] = useState<PageState>("loading");
   const [errorMsg,  setErrorMsg]  = useState<string | null>(null);
@@ -28,7 +32,6 @@ export const LessonPage = () => {
         return;
       }
 
-      // ✅ .limit(1) instead of .single()
       const { data, error } = await supabase
         .from("lessons")
         .select("id, title, content, test_id")
@@ -49,6 +52,9 @@ export const LessonPage = () => {
 
       setLesson(data[0] as Lesson);
       setPageState("ready");
+
+      // ✅ Mark this lesson as visited as soon as it loads
+      markLessonVisited(lessonId);
     };
 
     fetchLesson();
@@ -94,7 +100,6 @@ export const LessonPage = () => {
           <X size={28} />
         </button>
 
-        {/* Progress bar — decorative for now */}
         <div className="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
           <div className="h-full w-1/2 bg-[#58CC02] rounded-full" />
         </div>
