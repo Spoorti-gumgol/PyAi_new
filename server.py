@@ -8,7 +8,7 @@ from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
@@ -77,9 +77,10 @@ async def lifespan(app: FastAPI):
             allow_dangerous_deserialization=True
         )
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-3-flash-preview",
-        temperature=0.3
+    llm = ChatGroq(
+        model="llama-3.1-8b-instant",   # fast & cheap
+        temperature=0.3,
+        groq_api_key=os.getenv("GROQ_API_KEY")
     )
 
     prompt = ChatPromptTemplate.from_template("""
@@ -111,16 +112,19 @@ async def lifespan(app: FastAPI):
     - use your own knowledge, but clearly explain
 
     Format your answer STRICTLY like this:
+    Format your answer as plain text.
+    Do NOT use:
+    - #
+    - *
+    - bullet points
+    - markdown
+    - new lines
+
+    Write like a chatbot speaking naturally.
 
     Title (1 line)
-
-    ## Explanation
-    Short explanation in 2-3 lines.
-
-    ## Example
+    Explanation Short explanation in 2-3 lines.
     Simple example.
-
-    ## Tip
     One small helpful tip.
 
     Use:
@@ -253,8 +257,20 @@ async def chat_api(req: ChatRequest):
         "topic_name":topic_name,
         "test_name":test_name,
     })
-    print(response)
-    return {"reply": response}
+    # 🔥 CLEAN RESPONSE
+    clean = response
+
+    # remove markdown symbols
+    clean = re.sub(r"#", "", clean)
+    clean = re.sub(r"\*", "", clean)
+
+    # replace newlines with space
+    clean = re.sub(r"\n+", " ", clean)
+
+    # remove extra spaces
+    clean = re.sub(r"\s+", " ", clean).strip()
+
+    return {"reply": clean}
 
 @app.post("/analyze")
 async def analyze_user(req: AnalysisRequest):
@@ -292,9 +308,10 @@ Progress Data:
 """
 
         # 🔥 Call LLM directly (reuse your Gemini model)
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-3-flash-preview",
-            temperature=0
+        llm = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0,
+            groq_api_key=os.getenv("GROQ_API_KEY")
         )
 
         response = llm.invoke(analysis_prompt)

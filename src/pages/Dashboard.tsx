@@ -111,45 +111,84 @@ export const Dashboard = () => {
               <div className="bg-white rounded-[32px] border-2 border-[#E5E5E5] p-8 shadow-sm">
                 
                 {loading ? (
-                  <p className="text-gray-400">Analyzing your progress...</p>
+                  <motion.div 
+                    className="flex flex-col items-center justify-center gap-3 py-10"
+                    animate={{ scale: [1, 1.05, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.2 }}
+                  >
+                    <span className="text-4xl">🤖</span>
+                    <p className="text-gray-500 font-semibold">
+                      Your AI coach is thinking...
+                    </p>
+                  </motion.div>
                 ) : analysis ? (
                   <div className="space-y-6">
                     
-                    {/* Summary */}
-                    <div>
-                      <h3 className="font-bold text-lg text-[#4B4B4B]">Summary</h3>
-                      <p className="text-gray-600">{analysis.summary}</p>
-                    </div>
+                    {/* 🧠 Summary Card */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} 
+                      animate={{ opacity: 1, y: 0 }}
+                      className="bg-blue-50 border-2 border-blue-100 rounded-2xl p-6 shadow-sm"
+                    >
+                      <h3 className="font-black text-lg text-blue-600 mb-2">🧠 Your Learning Story</h3>
+                      <p className="text-gray-700 font-medium leading-relaxed">
+                        {analysis.summary}
+                      </p>
+                    </motion.div>
 
-                    {/* Strengths */}
-                    <div>
-                      <h3 className="font-bold text-lg text-green-600">Strengths</h3>
-                      <ul className="list-disc ml-6 text-gray-600">
-                        {analysis.strengths.map((s: string, i: number) => (
-                          <li key={i}>{s}</li>
+                    {/* 💪 Strengths */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} 
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.1 }}
+                      className="bg-green-50 border-2 border-green-100 rounded-2xl p-6"
+                    >
+                      <h3 className="font-black text-lg text-green-600 mb-3">💪 You’re Awesome At</h3>
+                      <div className="space-y-2">
+                        {analysis.strengths?.map((s: string, i: number) => (
+                          <div key={i} className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm">
+                            <span className="text-green-500 text-xl">⭐</span>
+                            <p className="text-gray-700 font-medium">{s}</p>
+                          </div>
                         ))}
-                      </ul>
-                    </div>
+                      </div>
+                    </motion.div>
 
-                    {/* Weaknesses */}
-                    <div>
-                      <h3 className="font-bold text-lg text-red-500">Weaknesses</h3>
-                      <ul className="list-disc ml-6 text-gray-600">
-                        {analysis.weaknesses.map((w: string, i: number) => (
-                          <li key={i}>{w}</li>
+                    {/* ⚡ Weaknesses */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} 
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="bg-red-50 border-2 border-red-100 rounded-2xl p-6"
+                    >
+                      <h3 className="font-black text-lg text-red-500 mb-3">⚡ Let’s Improve</h3>
+                      <div className="space-y-2">
+                        {analysis.weaknesses?.map((w: string, i: number) => (
+                          <div key={i} className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm">
+                            <span className="text-red-400 text-xl">🎯</span>
+                            <p className="text-gray-700 font-medium">{w}</p>
+                          </div>
                         ))}
-                      </ul>
-                    </div>
+                      </div>
+                    </motion.div>
 
-                    {/* Next Steps */}
-                    <div>
-                      <h3 className="font-bold text-lg text-blue-500">Recommended Next Steps</h3>
-                      <ul className="list-disc ml-6 text-gray-600">
-                        {analysis.nextSteps.map((n: string, i: number) => (
-                          <li key={i}>{n}</li>
+                    {/* 🚀 Next Steps */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }} 
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.3 }}
+                      className="bg-yellow-50 border-2 border-yellow-100 rounded-2xl p-6"
+                    >
+                      <h3 className="font-black text-lg text-yellow-600 mb-3">🚀 Your Next Mission</h3>
+                      <div className="space-y-2">
+                        {analysis.nextSteps?.map((n: string, i: number) => (
+                          <div key={i} className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl shadow-sm">
+                            <span className="text-yellow-500 text-xl">👉</span>
+                            <p className="text-gray-700 font-medium">{n}</p>
+                          </div>
                         ))}
-                      </ul>
-                    </div>
+                      </div>
+                    </motion.div>
 
                   </div>
                 ) : (

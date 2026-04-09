@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../supabase";
 import { X, CheckCircle, XCircle, Star, Zap } from "lucide-react";
+import { useRef } from "react";
 
 
 type Option = {
@@ -71,10 +72,36 @@ export default function TestPage() {
   const [chatMessages, setChatMessages] = useState<any[]>([]);
   const [userMessage, setUserMessage] = useState("");
   const [nextUnitId, setNextUnitId] = useState<string | null>(null);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+  const feedbackRef = useRef<HTMLDivElement | null>(null);
+
+  const typeMessage = (text: string) => {
+    let index = 0;
+
+    setChatMessages(prev => [
+      ...prev.slice(0, -1),
+      { role: "bot", content: "" }
+    ]);
+
+    const interval = setInterval(() => {
+      index++;
+
+      setChatMessages(prev => {
+        const updated = [...prev];
+        updated[updated.length - 1].content = text.slice(0, index);
+        return updated;
+      });
+
+      if (index >= text.length) {
+        clearInterval(interval);
+      }
+    }, 20);
+  };
 
   const sendMessage = async () => {
     const { data: { user } } = await supabase.auth.getUser()
     const userId = user?.id;    
+
     if (!userMessage.trim()) return;
 
     const newUserMsg = {
@@ -83,14 +110,12 @@ export default function TestPage() {
     };
 
     const updatedHistory = [...chatMessages, newUserMsg];
-    setChatMessages(updatedHistory);
-    setUserMessage("");
-
-    // typing state
-    setChatMessages(prev => [
-      ...prev,
+    setChatMessages([
+      ...updatedHistory,
       { role: "bot", content: "Typing..." }
     ]);
+
+    setUserMessage("");
 
     try {
       const res = await fetch("http://127.0.0.1:8000/chat", {
@@ -100,27 +125,19 @@ export default function TestPage() {
         },
         body: JSON.stringify({
           message: userMessage,
-
-          // 🔥 IMPORTANT CONTEXT
           question: currentQuestion.question_text,
-          selected_option: selectedOption?.option_text,
-          correct_answer: currentQuestion.mcq_options.find(o => o.is_correct)?.option_text,
-
           history: updatedHistory.map(msg => ({
             role: msg.role === "bot" ? "assistant" : msg.role,
             content: msg.content
           })),
-          username: "student",
           user_id: userId
         })
       });
 
       const data = await res.json();
 
-      setChatMessages(prev => [
-        ...prev.slice(0, -1),
-        { role: "bot", content: data.reply }
-      ]);
+      // 🔥 THIS IS THE KEY FIX
+      typeMessage(data.reply);
 
     } catch (error) {
       setChatMessages(prev => [
@@ -181,6 +198,10 @@ export default function TestPage() {
       fetchNextUnit();
     }, [testId]);
 
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
   const currentQuestion = questions[currentIndex];
   const progress        = questions.length > 0 ? (currentIndex / questions.length) * 100 : 0;
 
@@ -197,11 +218,18 @@ export default function TestPage() {
     } else {
       setStreakCount(0);
       setMascotMessage(randomFrom(WRONG_MESSAGES));
-
-      // 🔥 AUTO OPEN CHAT WHEN WRONG
       setShowChat(true);
     }
+
+    // ✅ Scroll to feedback
+    setTimeout(() => {
+      feedbackRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 100);
   };
+
 
   const handleNext = () => {
     if (currentIndex + 1 >= questions.length) {
@@ -434,6 +462,7 @@ export default function TestPage() {
         {/* Feedback panel */}
         {selectedOption && (
           <div
+            ref={feedbackRef}
             className={`rounded-3xl p-6 border-2 space-y-4 ${
               selectedOption.is_correct
                 ? "bg-[#d7ffb8] border-[#58CC02]"
@@ -463,7 +492,7 @@ export default function TestPage() {
               </p>
             )}
 
-            <div className="flex gap-3">
+            <div className="flex gap-3">  
 
               {/* ASK BUTTON */}
               <button
@@ -522,7 +551,7 @@ export default function TestPage() {
                     Send
                   </button>
                 </div>
-
+                <div ref={chatEndRef} />
               </div>
             )}
 
