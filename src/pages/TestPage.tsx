@@ -74,6 +74,10 @@ export default function TestPage() {
   const [nextUnitId, setNextUnitId] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
   const feedbackRef = useRef<HTMLDivElement | null>(null);
+  const currentQuestion = questions[currentIndex];
+  const progress        = questions.length > 0 ? (currentIndex / questions.length) * 100 : 0;
+  const [userId, setUserId] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState<string | null>(null);
 
   const typeMessage = (text: string) => {
     let index = 0;
@@ -98,11 +102,21 @@ export default function TestPage() {
     }, 20);
   };
 
-  const sendMessage = async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    const userId = user?.id;    
+  useEffect(() => {
+    const getUser = async () => {
+      const { data } = await supabase.auth.getUser();
+      setUserId(data.user?.id || null);
+    };
+    getUser();
+  }, []);
 
+  const sendMessage = async () => {
     if (!userMessage.trim()) return;
+
+    if (!userId) {
+      console.error("User not loaded yet");
+      return;
+    }
 
     const newUserMsg = {
       role: "user",
@@ -110,11 +124,13 @@ export default function TestPage() {
     };
 
     const updatedHistory = [...chatMessages, newUserMsg];
+
     setChatMessages([
       ...updatedHistory,
       { role: "bot", content: "Typing..." }
     ]);
 
+    const messageToSend = userMessage;
     setUserMessage("");
 
     try {
@@ -124,8 +140,8 @@ export default function TestPage() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          message: userMessage,
-          question: currentQuestion.question_text,
+          message: messageToSend,
+          question: currentQuestion?.question_text || "",
           history: updatedHistory.map(msg => ({
             role: msg.role === "bot" ? "assistant" : msg.role,
             content: msg.content
@@ -136,7 +152,45 @@ export default function TestPage() {
 
       const data = await res.json();
 
-      // 🔥 THIS IS THE KEY FIX
+      // ✅ FIXED session handling
+      let currentSession = sessionId;
+      if (!currentSession) {
+        currentSession = crypto.randomUUID();
+        setSessionId(currentSession);
+      }
+
+      // ✅ Save USER message
+      const { error: userError } = await supabase.from("ai_messages").insert([
+        {
+          session_id: currentSession,
+          sender: "user",
+          content: messageToSend,
+          message_type: "doubt",
+          metadata: {
+            test_id: testId,
+            question_id: currentQuestion?.id
+          }
+        }
+      ]);
+
+      if (userError) console.error("User insert error:", userError);
+
+      // ✅ Save AI message
+      const { error: aiError } = await supabase.from("ai_messages").insert([
+        {
+          session_id: currentSession,
+          sender: "ai",
+          content: data.reply,
+          message_type: "feedback",
+          metadata: {
+            test_id: testId,
+            question_id: currentQuestion?.id
+          }
+        }
+      ]);
+
+      if (aiError) console.error("AI insert error:", aiError);
+
       typeMessage(data.reply);
 
     } catch (error) {
@@ -202,8 +256,7 @@ export default function TestPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMessages]);
 
-  const currentQuestion = questions[currentIndex];
-  const progress        = questions.length > 0 ? (currentIndex / questions.length) * 100 : 0;
+
 
 
   const handleSelect = (opt: Option) => {

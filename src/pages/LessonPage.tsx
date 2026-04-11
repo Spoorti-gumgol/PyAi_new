@@ -54,7 +54,9 @@ export const LessonPage = () => {
       setPageState("ready");
 
       // ✅ Mark this lesson as visited as soon as it loads
-      markLessonVisited(lessonId);
+      if (typeof markLessonVisited === "function") {
+        markLessonVisited(lessonId);
+      }
     };
 
     fetchLesson();

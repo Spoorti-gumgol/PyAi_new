@@ -27,7 +27,7 @@ const CORRECT_MESSAGES = ["Amazing! 🎉", "You rock! ⭐", "Superstar! 🌟", "
 const WRONG_MESSAGES   = ["Almost! 💪", "Keep going! 🔥", "You got this! 🚀", "Try harder! 😤", "So close! 🌈"];
 const randomFrom = (arr: string[]) => arr[Math.floor(Math.random() * arr.length)];
 
-const MAX_QUESTIONS = 30;
+const MAX_QUESTIONS = 10;
 const INITIAL_DIFFICULTY = 50;
 const DIFFICULTY_STEP = 15;
 const DIFFICULTY_MIN = 25;
@@ -109,12 +109,62 @@ export default function AdaptiveTestPage() {
   const [adaptiveQuestions, setAdaptiveQuestions]  = useState<Question[]>([]);
   const [usedIds,           setUsedIds]            = useState<string[]>([]);
 
+  const generateAIQuestions = async () => {
+    if (!userId || !currentQuestion) return;
+
+    try {
+      // ✅ Get user doubts from ai_messages
+      const { data: messages, error } = await supabase
+        .from("ai_messages")
+        .select("content, metadata")
+        .eq("sender", "user")
+        .eq("message_type", "doubt");
+
+      if (error) {
+        console.error("Error fetching doubts:", error);
+        return;
+      }
+
+      // ✅ Filter only relevant doubts for THIS topic (optional but powerful)
+      const userDoubts = messages
+        ?.filter((msg: any) => msg.metadata?.topic_id === currentQuestion.topic_id)
+        .map((msg: any) => msg.content) || [];
+
+      // 🔥 Call backend
+      const res = await fetch("http://localhost:8000/generate-questions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          topic_id: currentQuestion.topic_id,
+          doubts: userDoubts,
+          existing_questions: questions.map(q => q.question_text),
+          difficulty: currentDifficulty
+        })
+      });
+
+      const data = await res.json();
+
+      // ✅ Add generated questions
+      if (data.generated_questions?.length) {
+        setQuestions(prev => [...prev, ...data.generated_questions]);
+      }
+
+    } catch (err) {
+      console.error("AI generation failed", err);
+    }
+  };
+
   // Auth
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUserId(data.user?.id ?? null));
   }, []);
+
+  
 
   // ── Fetch unit name ──────────────────────────────
   useEffect(() => {
@@ -243,6 +293,12 @@ export default function AdaptiveTestPage() {
 
   // ── Next ──────────────────────────────────────────
   const handleNext = () => {
+
+      // 👇 ADD THIS HERE
+    if (currentIndex > 0 && currentIndex % 3 === 0) {
+      generateAIQuestions();
+    }
+
     setSelectedOption(null);
     setMascotMessage(null);
     setQuestionStartTime(Date.now());
@@ -300,6 +356,9 @@ export default function AdaptiveTestPage() {
     }
   };
 
+
+
+
   // ── Option style ──────────────────────────────────
   const optionStyle = (opt: Option) => {
     const base = "w-full px-5 py-4 rounded-3xl font-black text-left transition-all duration-200 flex items-center justify-between gap-3 border-b-4 text-lg active:translate-y-1 active:border-b-0";
@@ -340,6 +399,18 @@ export default function AdaptiveTestPage() {
     const percent   = totalAnswered > 0 ? Math.round((score / totalAnswered) * 100) : 0;
     const isPerfect = percent === 100;
     const isGood    = percent >= 70;
+
+    const handleContinue = () => {
+      if (!unitId) return;
+
+      if (percent >= 45) {
+        // 👉 Go to next unit
+        navigate(`/units/${Number(unitId) + 1}`);
+      } else {
+        // 👉 Restart same unit
+        handleRestart();
+      }
+    };
 
     return (
       <div className="min-h-screen bg-[#FFF8F0] flex items-center justify-center px-6 py-12">
@@ -387,9 +458,11 @@ export default function AdaptiveTestPage() {
               className="flex-1 py-4 bg-gray-100 text-gray-600 font-black rounded-2xl hover:bg-gray-200 transition text-base">
               Exit
             </button>
-            <button onClick={handleRestart}
-              className="flex-1 py-4 bg-[#FF9600] text-white font-black rounded-2xl shadow-[0_4px_0_0_#CC7A00] active:translate-y-1 active:shadow-none transition-all text-base">
-              Retry 🔄
+            <button
+              onClick={handleContinue}
+              className="flex-1 py-4 bg-[#FF9600] text-white font-black rounded-2xl shadow-[0_4px_0_0_#CC7A00] active:translate-y-1 active:shadow-none transition-all text-base"
+            >
+              {percent >= 45 ? "Next Unit 🚀" : "Retry Unit 🔄"}
             </button>
           </div>
         </div>

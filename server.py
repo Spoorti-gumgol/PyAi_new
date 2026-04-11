@@ -38,6 +38,13 @@ class AnalysisRequest(BaseModel):
     user_id: str
     progress: dict
 
+class GenerateQuestionsRequest(BaseModel):
+    user_id: str
+    topic_id: str
+    doubts: list[str]
+    existing_questions: list
+    difficulty: int
+
 from contextlib import asynccontextmanager
 
 @asynccontextmanager
@@ -344,3 +351,125 @@ Progress Data:
             "nextSteps": []
         }
     
+@app.post("/generate-questions")
+async def generate_questions(req: GenerateQuestionsRequest):
+    try:
+        # 🔥 Step 1: Build prompt
+        prompt = f"""
+You are an adaptive learning system.
+
+Student doubts:
+{req.doubts}
+
+Existing questions:
+{req.existing_questions}
+
+Target difficulty: {req.difficulty} (0-100)
+
+TASK:
+1. Identify weak areas from doubts
+2. Check if existing questions already cover them
+3. ONLY IF NOT covered:
+   - Generate 2 new MCQ questions
+4. Match difficulty level
+5. Return JSON ONLY
+
+FORMAT:
+[
+  {{
+    "question_text": "...",
+    "difficulty": 60,
+    "options": [
+      {{"option_text": "...", "is_correct": true, "explanation": "..."}},
+      {{"option_text": "...", "is_correct": false, "explanation": "..."}},
+      {{"option_text": "...", "is_correct": false, "explanation": "..."}},
+      {{"option_text": "...", "is_correct": false, "explanation": "..."}}
+    ]
+  }}
+]
+"""
+
+        # 🔥 Step 2: Call LLM
+        llm = ChatGroq(
+            model="llama-3.1-8b-instant",
+            temperature=0.5,
+            groq_api_key=os.getenv("GROQ_API_KEY")
+        )
+
+        response = llm.invoke(prompt)
+        raw = response.content
+
+        # 🔥 Step 3: Extract JSON safely
+        match = re.search(r"\[\s*{.*?}\s*\]", raw, re.DOTALL)
+        if not match:
+            return {"generated_questions": []}
+
+        try:
+            generated_questions = json.loads(match.group())
+        except:
+            return {"generated_questions": []}
+
+        saved_questions = []
+
+        for q in generated_questions:
+            # ✅ validate structure
+            if "options" not in q or len(q["options"]) < 2:
+                continue
+
+            # ✅ limit options to 4
+            q["options"] = q["options"][:4]
+
+            # ✅ ensure only ONE correct answer
+            correct_found = False
+            for opt in q["options"]:
+                if opt.get("is_correct"):
+                    if correct_found:
+                        opt["is_correct"] = False
+                    else:
+                        correct_found = True
+
+
+            q_insert = supabase.table("questions").insert({
+                "question_text": q["question_text"],
+                "difficulty": q["difficulty"],
+                "topic_id": req.topic_id,
+                "is_generated": True
+            }).execute()
+
+            if not q_insert.data:
+                continue
+
+            question_id = q_insert.data[0]["id"]
+
+            formatted_options = []
+
+            # ✅ insert options AND collect inserted rows
+            for opt in q["options"]:
+                opt_insert = supabase.table("mcq_options").insert({
+                    "question_id": question_id,
+                    "option_text": opt["option_text"],
+                    "is_correct": opt["is_correct"],
+                    "explanation": opt["explanation"]
+                }).execute()
+
+                if opt_insert.data:
+                    formatted_options.append(opt_insert.data[0])  # ✅ includes ID
+
+            # ✅ skip if no options inserted
+            if len(formatted_options) == 0:
+                continue
+
+            # ✅ return DB-shaped object (matches frontend)
+            saved_questions.append({
+                "id": question_id,
+                "question_text": q["question_text"],
+                "difficulty": q.get("difficulty", req.difficulty),
+                "topic_id": req.topic_id,
+                "mcq_options": formatted_options
+            })
+
+        return {"generated_questions": saved_questions}
+
+    except Exception as e:
+        print("Generation error:", e)
+        return {"generated_questions": []}
